@@ -6,6 +6,7 @@ from invokeai.app.services.board_records.board_records_common import (
     BoardChanges,
     BoardRecord,
     BoardRecordDeleteException,
+    BoardRecordNameAmbiguousException,
     BoardRecordNotFoundException,
     BoardRecordOrderBy,
     BoardRecordProjectOwnedException,
@@ -110,6 +111,44 @@ class SqliteBoardRecordStorage(BoardRecordStorageBase):
             except sqlite3.Error as e:
                 raise BoardRecordSaveException from e
         return self.get(board_id)
+
+    def resolve_by_name(self, user_id: str, board_name: str, create_if_missing: bool) -> Optional[BoardRecord]:
+        # Lookup and insert share one transaction, which holds the database lock throughout: a
+        # second worker resolving the same new name waits, then finds this worker's board. The
+        # insert is inline because `save` opens its own transaction and would commit on its own.
+        with self._db.transaction() as cursor:
+            cursor.execute(
+                """--sql
+                SELECT *
+                FROM boards
+                WHERE user_id = ?
+                  AND board_name = ?
+                  AND archived = 0
+                  AND NOT EXISTS (SELECT 1 FROM projects WHERE projects.board_id = boards.board_id)
+                ORDER BY created_at, board_id;
+                """,
+                (user_id, board_name),
+            )
+            rows = cast(list[sqlite3.Row], cursor.fetchall())
+            if len(rows) > 1:
+                raise BoardRecordNameAmbiguousException(board_name, [row["board_id"] for row in rows])
+            if rows:
+                return BoardRecord(**dict(rows[0]))
+            if not create_if_missing:
+                return None
+            board_id = uuid_string()
+            try:
+                cursor.execute(
+                    """--sql
+                    INSERT INTO boards (board_id, board_name, user_id)
+                    VALUES (?, ?, ?);
+                    """,
+                    (board_id, board_name, user_id),
+                )
+            except sqlite3.Error as e:
+                raise BoardRecordSaveException from e
+            cursor.execute("SELECT * FROM boards WHERE board_id = ?;", (board_id,))
+            return BoardRecord(**dict(cursor.fetchone()))
 
     def get(
         self,

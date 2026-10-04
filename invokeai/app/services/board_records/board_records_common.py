@@ -124,6 +124,17 @@ class BoardRecordProjectOwnedException(BoardRecordSaveException):
         super().__init__(message)
 
 
+class BoardRecordNameAmbiguousException(Exception):
+    """Raised when a board name matches more than one board, so no board can be picked."""
+
+    def __init__(self, board_name: str, board_ids: list[str]):
+        self.board_name = board_name
+        self.board_ids = board_ids
+        super().__init__(
+            f'Multiple boards named "{board_name}" (ids: {", ".join(board_ids)}). Rename or archive all but one.'
+        )
+
+
 class BoardRecordDeleteException(Exception):
     """Raised when an board record cannot be deleted."""
 

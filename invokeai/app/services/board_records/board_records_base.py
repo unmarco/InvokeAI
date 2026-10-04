@@ -44,6 +44,17 @@ class BoardRecordStorageBase(ABC):
         pass
 
     @abstractmethod
+    def resolve_by_name(self, user_id: str, board_name: str, create_if_missing: bool) -> Optional[BoardRecord]:
+        """Finds the user's board with exactly this name, optionally creating it.
+
+        Only the user's own boards that are neither archived nor claimed by a project can match.
+        Returns None when nothing matches and `create_if_missing` is False. Raises
+        BoardRecordNameAmbiguousException when more than one board matches. The lookup and the
+        insert are one transaction, so concurrent callers resolving the same new name get one board.
+        """
+        pass
+
+    @abstractmethod
     def get(
         self,
         board_id: str,
