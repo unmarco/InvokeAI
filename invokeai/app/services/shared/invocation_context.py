@@ -10,7 +10,11 @@ from torch import Tensor
 
 from invokeai.app.invocations.constants import IMAGE_MODES
 from invokeai.app.invocations.fields import MetadataField, WithBoard, WithMetadata
-from invokeai.app.services.board_records.board_records_common import BoardRecordOrderBy, BoardVisibility
+from invokeai.app.services.board_records.board_records_common import (
+    BOARD_NAME_MAX_LENGTH,
+    BoardRecordOrderBy,
+    BoardVisibility,
+)
 from invokeai.app.services.boards.boards_common import BoardDTO
 from invokeai.app.services.config.config_default import InvokeAIAppConfig
 from invokeai.app.services.image_records.image_records_common import ImageCategory, ResourceOrigin
@@ -158,6 +162,42 @@ class BoardsInterface(InvocationContextInterface):
         return self._services.boards.get_all(
             user_id, is_admin, order_by=BoardRecordOrderBy.CreatedAt, direction=SQLiteDirection.Descending
         )
+
+    def resolve(self, board_name: str, create_if_missing: bool = False) -> Optional[BoardDTO]:
+        """Finds one of the current user's boards by name, optionally creating it.
+
+        The rules are a first proposal and deliberately strict, so they can be relaxed later
+        without breaking nodes that rely on them:
+
+        - Leading and trailing whitespace is removed; matching is otherwise exact and case-sensitive.
+        - Only boards owned by the queue item's user can match, also for admins. Shared and public
+          boards of other users never do.
+        - Archived boards and boards that belong to a project never match.
+        - If more than one board matches, BoardRecordNameAmbiguousException is raised, naming them.
+        - If nothing matches, a new private board is created when `create_if_missing` is True;
+          otherwise None is returned.
+
+        Concurrent calls for the same new name (e.g. on several GPUs) create a single board.
+
+        Args:
+            board_name: The name of the board.
+            create_if_missing: Whether to create the board when no board matches.
+
+        Returns:
+            The board DTO, or None if no board matches and `create_if_missing` is False.
+        """
+        name = board_name.strip()
+        if not name:
+            raise ValueError("Board name must not be empty.")
+        if len(name) > BOARD_NAME_MAX_LENGTH:
+            raise ValueError(f"Board name must be at most {BOARD_NAME_MAX_LENGTH} characters.")
+        user_id = self._data.queue_item.user_id
+        if self._services.configuration.multiuser:
+            user = self._services.users.get(user_id)
+            # Unlike get_all, a missing user is rejected too: this call can create a board.
+            if user is None or not user.is_active:
+                raise PermissionError("Queue user is not authorized to resolve boards.")
+        return self._services.boards.resolve_by_name(user_id, name, create_if_missing)
 
     def add_image_to_board(self, board_id: str, image_name: str) -> None:
         """Adds an image to a board.
