@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from invokeai.app.services.board_records.board_records_common import BoardChanges, BoardRecordOrderBy
 from invokeai.app.services.boards.boards_common import BoardDTO
@@ -24,6 +25,19 @@ class BoardServiceABC(ABC):
         board_id: str,
     ) -> BoardDTO:
         """Gets a board."""
+        pass
+
+    @abstractmethod
+    def resolve_by_name(
+        self,
+        user_id: str,
+        board_name: str,
+        create_if_missing: bool = False,
+    ) -> Optional[BoardDTO]:
+        """Finds the user's board with exactly this name, optionally creating it.
+
+        See BoardRecordStorageBase.resolve_by_name for which boards can match.
+        """
         pass
 
     @abstractmethod

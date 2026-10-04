@@ -73,6 +73,17 @@ class BoardService(BoardServiceABC):
             project_id=project_id,
         )
 
+    def resolve_by_name(
+        self,
+        user_id: str,
+        board_name: str,
+        create_if_missing: bool = False,
+    ) -> Optional[BoardDTO]:
+        board_record = self.__invoker.services.board_records.resolve_by_name(user_id, board_name, create_if_missing)
+        if board_record is None:
+            return None
+        return self.get_dto(board_record.board_id)
+
     def update(
         self,
         board_id: str,
